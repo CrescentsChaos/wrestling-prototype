@@ -135,7 +135,7 @@ function renderSpotlight() {
       <div class="spotlight-body">
         <span class="spotlight-tag">${belts.length ? 'CHAMPION' : 'SUPERSTAR SPOTLIGHT'}</span>
         <h1>${w.name.split(' ')[0].toUpperCase()}<br><em>${w.name.split(' ').slice(1).join(' ').toUpperCase()}</em></h1>
-        <p>"${w.nickname}" &mdash; ${w.archetype} out of ${w.hometown}. ${w.bio}</p>
+        <p>"${w.nicknames[0]}" &mdash; ${w.archetype} out of ${w.hometown}. ${w.bio}</p>
         <div class="spotlight-stats">
           <div><b>${w.rating}</b><span>Overall</span></div>
           <div><b>${w.weight_class.split(' ')[0]}</b><span>${w.weight_class.includes(' ') ? w.weight_class.split(' ').slice(1).join(' ') : 'Class'}</span></div>
@@ -190,7 +190,7 @@ function renderRoster() {
       <div class="w-body">
         <span class="rating">${w.rating}</span>
         <div class="w-name">${w.name}</div>
-        <div class="w-meta">${w.nickname} • ${w.weight_class}</div>
+        <div class="w-meta">${w.nicknames[0]} • ${w.weight_class}</div>
         <div class="record-line"><b>${r.wins}-${r.losses}${r.draws ? '-' + r.draws : ''}</b> career record</div>
         ${['strength', 'striking', 'grappling', 'speed', 'stamina'].map(k =>
           `<div class="stat"><div class="stat-line"><span>${k}</span><span>${w.stats[k]}</span></div><div class="bar"><i style="width:${w.stats[k]}%"></i></div></div>`
@@ -227,7 +227,7 @@ function openWrestlerModal(id) {
       </div>
       <div>
         <h3 class="modal-name">${w.name}</h3>
-        <div class="modal-nick">"${w.nickname}" — ${w.archetype} • ${w.alignment}${belts.length ? ' • 🏆 ' + belts.map(b => b.name).join(', ') : ''}</div>
+        <div class="modal-nick">${w.nicknames.map(n => `"${n}"`).join(' • ')} — ${w.archetype} • ${w.alignment}${belts.length ? ' • 🏆 ' + belts.map(b => b.name).join(', ') : ''}</div>
         <div class="modal-facts">
           <div>Hometown: <b>${w.hometown}</b></div>
           <div>Height: <b>${w.height}</b></div>
@@ -236,11 +236,17 @@ function openWrestlerModal(id) {
           <div>Debut: <b>${w.debut_year}</b></div>
           <div>Overall: <b>${w.rating} OVR</b></div>
           <div>Career record: <b>${r.wins}-${r.losses}${r.draws ? '-' + r.draws : ''}</b></div>
-          <div>Signature / Finisher: <b>${w.signature} / ${w.finisher}</b></div>
         </div>
         <p class="modal-bio">${w.bio}</p>
         <p class="eyebrow">ATTRIBUTE WHEEL</p>
         <div class="modal-radar">${radarSVG(w.stats)}</div>
+        <p class="eyebrow" style="margin-top:16px">SIGNATURES</p>
+        <div class="moveset">${w.signatures.map(m => `<span class="sig">${m}</span>`).join('')}</div>
+        <p class="eyebrow" style="margin-top:16px">SUPER FINISHER &amp; SUBMISSION FINISHER</p>
+        <div class="moveset">
+          <span class="fin-super">💥 ${w.super_finisher}</span>
+          <span class="fin-sub">🔒 ${w.submission_finisher}</span>
+        </div>
         <p class="eyebrow" style="margin-top:16px">MOVESET</p>
         <div class="moveset">${w.moveset.map(m => `<span>${m}</span>`).join('')}</div>
       </div>
@@ -276,7 +282,7 @@ function renderTitlesScreen() {
       <img src="${c.image}" alt="${c.name}">
       <div>
         <div class="name">${t.name}</div>
-        <div class="tier">${t.tier} • Champion: ${c.name} "${c.nickname}"</div>
+        <div class="tier">${t.tier} • Champion: ${c.name} "${c.nicknames[0]}"</div>
       </div>
       <div class="defenses"><b>${defenses}</b>successful defenses</div>
     </div>`;
@@ -350,9 +356,12 @@ const COLOR_LINES = {
   reversal: ["What a counter — the crowd can't believe it!", "Reversed! That changes everything.", "Incredible awareness right there."],
   signature: ["That's a signature we've seen end matches before!", "Big move — the momentum has shifted!", "The crowd is coming alive!"],
   finisher: ["THIS COULD BE IT!", "That's the finishing move — get the referee in position!", "It's over if this connects clean!"],
+  submission: ["He's got nowhere to go with this hold locked in!", "That submission has ended careers!", "Tap or snap — this is the moment!"],
   kickout: ["I don't believe it — a kick out!", "How did they survive that?!", "This crowd is on its feet!"],
-  tapout: ["It's academic now — nowhere to go.", "Total agony — this could be it.", ""],
-  weapon: ["This match has gone off the rails!", "No disqualifications — anything goes here!", "That's going to leave a mark."]
+  tapout: ["It's academic now — nowhere to go.", "Total agony — this could be it.", "Fighting for the ropes with everything left!"],
+  weapon: ["This match has gone off the rails!", "No disqualifications — anything goes here!", "That's going to leave a mark."],
+  comeback: ["Second wind! Where did that come from?!", "The tide is turning fast!", "What a fight-back — the crowd is roaring!"],
+  bothdown: ["Both competitors are down — the referee starts his count!", "Neither one is moving — what a collision!"]
 };
 function colorLine(kind) {
   const pool = COLOR_LINES[kind]; if (!pool || !pool.length) return null;
@@ -361,9 +370,15 @@ function colorLine(kind) {
 }
 
 /* ============================================================
-   MATCH ENGINE
+   MATCH ENGINE — control, stamina & momentum driven.
+   No hit-point pool: matches are won by pinfall (via the super
+   finisher, a signature, or a surprise roll-up) or by submission
+   (via the submission finisher), with kick-out / tap-out odds
+   built from stamina, durability, submission skill and momentum.
    ============================================================ */
-function freshState(w) { return { ...w, hp: 100, stamina: 100, momentum: 50, falls: 0, finisherMeter: 0, finisherReady: false }; }
+function freshState(w) {
+  return { ...w, stamina: 100, momentum: 50, control: 0, meter: 0, meterReady: false, falls: 0 };
+}
 
 function sim(aBase, bBase, type, titleId) {
   const A = freshState(aBase), B = freshState(bBase);
@@ -371,6 +386,7 @@ function sim(aBase, bBase, type, titleId) {
   let crowd = 50;
   let winner = null, loser = null, finish = 'Pinfall', round = 0, draw = false;
   const ironMan = type === 'Iron Man';
+  const submissionOnly = type === 'Submission';
   const maxRounds = ironMan ? 140 : 80;
   const targetFalls = ironMan ? 3 : 1;
 
@@ -380,56 +396,90 @@ function sim(aBase, bBase, type, titleId) {
   };
 
   const chargeMeter = (x, amount) => {
-    x.finisherMeter = Math.min(100, x.finisherMeter + amount);
-    if (x.finisherMeter >= 100 && !x.finisherReady) {
-      x.finisherReady = true;
-      events.push({ text: `${x.name}'s finishing move is fired up and ready to go!`, big: true, who: 'PBP', toast: { text: `${x.name.toUpperCase()} — FINISHER READY`, kind: 'gold' } });
+    x.meter = Math.min(100, x.meter + amount);
+    if (x.meter >= 100 && !x.meterReady) {
+      x.meterReady = true;
+      events.push({ text: `${x.name} is fired up — the finish is close!`, big: true, who: 'PBP', toast: { text: `${x.name.toUpperCase()} — FINISH READY`, kind: 'gold' } });
     }
   };
 
-  const hit = (x, y, kind) => {
-    const base = x.stats.striking * .35 + x.stats.grappling * .3 + x.stats.strength * .15 + x.stats.speed * .2;
-    const defense = y.stats.durability * .35 + y.stats.speed * .15 + y.stats.grappling * .2 + y.stats.stamina * .3;
-    let dmg = Math.max(3, Math.round((base - defense * .42) * (.65 + Math.random() * .8)));
-    if (kind === 'signature') dmg += 12;
-    if (kind === 'finisher') dmg += 28;
-    y.hp = Math.max(0, y.hp - dmg);
-    x.momentum = Math.min(100, x.momentum + 8);
-    y.momentum = Math.max(0, y.momentum - 7);
-    x.stamina = Math.max(5, x.stamina - (5 + Math.random() * 8));
-    const move = kind === 'signature' ? x.signature : kind === 'finisher' ? x.finisher : x.moveset[Math.floor(Math.random() * x.moveset.length)];
-    events.push({ text: `${x.name} hits ${y.name} with${kind === 'strike' ? ' a' : ''} ${move} — ${dmg} damage.`, big: kind !== 'strike', who: 'PBP' });
-    bumpCrowd(x, kind === 'finisher' ? 6 : kind === 'signature' ? 4 : 2);
-    if (kind === 'finisher') { x.finisherMeter = 0; x.finisherReady = false; }
-    else chargeMeter(x, kind === 'signature' ? 16 : 7);
+  // land offense: builds momentum/control and drains stamina — no damage number, no health pool
+  const land = (x, y, kind) => {
+    const move = kind === 'strike' ? x.moveset[Math.floor(Math.random() * x.moveset.length)]
+      : kind === 'signature' ? x.signatures[Math.floor(Math.random() * x.signatures.length)]
+      : x.super_finisher;
+    const momGain = kind === 'strike' ? 6 : kind === 'signature' ? 11 : 17;
+    const momLoss = kind === 'strike' ? 5 : kind === 'signature' ? 9 : 14;
+    const staminaCost = kind === 'strike' ? 4 + Math.random() * 5 : kind === 'signature' ? 7 + Math.random() * 6 : 9 + Math.random() * 5;
+    x.control += kind === 'strike' ? 1 : kind === 'signature' ? 2 : 3;
+    x.momentum = Math.min(100, x.momentum + momGain);
+    y.momentum = Math.max(0, y.momentum - momLoss);
+    x.stamina = Math.max(5, x.stamina - staminaCost);
+    const tail = kind === 'signature' ? ' — signature move!' : kind === 'super' ? ' — that\'s the big one!' : '.';
+    events.push({ text: `${x.name} connects with${kind === 'strike' ? ' a' : ''} ${move}${tail}`, big: kind !== 'strike', who: 'PBP' });
+    bumpCrowd(x, kind === 'strike' ? 2 : kind === 'signature' ? 4 : 6);
+    if (kind === 'super') { x.meter = 0; x.meterReady = false; }
+    else chargeMeter(x, kind === 'signature' ? 17 : 7);
     if (Math.random() < .3) {
       const line = colorLine(kind === 'strike' ? null : kind);
       if (line) events.push({ text: line, big: false, who: 'Color' });
     }
-    return dmg;
   };
 
   const weaponSpot = (x, y) => {
     const w = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
-    const dmg = 14 + Math.floor(Math.random() * 14);
-    y.hp = Math.max(0, y.hp - dmg);
     x.momentum = Math.min(100, x.momentum + 10);
-    chargeMeter(x, 10);
-    events.push({ text: `${x.name} introduces ${w} into the match, cracking it across ${y.name} — ${dmg} damage!`, big: true, who: 'PBP', toast: { text: 'NO HOLDS BARRED', kind: 'red' } });
+    y.momentum = Math.max(0, y.momentum - 8);
+    x.control += 2;
+    chargeMeter(x, 12);
+    events.push({ text: `${x.name} introduces ${w} into the match, cracking it across ${y.name}!`, big: true, who: 'PBP', toast: { text: 'NO HOLDS BARRED', kind: 'red' } });
     if (Math.random() < .4) { const l = colorLine('weapon'); if (l) events.push({ text: l, big: false, who: 'Color' }); }
     bumpCrowd(x, 8);
   };
 
-  const coverAttempt = (x, y) => {
-    events.push({ text: `${x.name} goes for the cover!`, big: true, who: 'PBP' });
-    const kickOutChance = y.hp < 30 ? .28 : .78;
-    if (Math.random() > kickOutChance) {
+  // pin attempt: survival odds come from stamina, durability, and how far into the match we are — never a health total
+  const coverAttempt = (x, y, tier) => {
+    events.push({ text: `${x.name} makes the cover!`, big: true, who: 'PBP' });
+    const fatigue = (100 - y.stamina) / 100;
+    const momEdge = (x.momentum - y.momentum) / 200;
+    const durBonus = (y.stats.durability - 70) / 260;
+    let survive = tier === 'super' ? .58 : tier === 'signature' ? .84 : .94;
+    survive = survive - fatigue * .38 - momEdge + durBonus;
+    survive = Math.max(.05, Math.min(.95, survive));
+    events.push({ text: `1...`, big: false, who: 'REF' });
+    if (Math.random() > survive) {
       winner = x; loser = y; finish = 'Pinfall';
-      events.push({ text: `1...2...3! ${x.name} wins it!`, big: true, who: 'PBP' });
+      events.push({ text: `2...3! ${x.name} gets the pin — it's over!`, big: true, who: 'REF' });
       return true;
     } else {
-      events.push({ text: `${y.name} kicks out!`, big: false, who: 'PBP', toast: { text: `${y.name.toUpperCase()} KICKS OUT!`, kind: 'gold' } });
+      const near = tier === 'super';
+      events.push({ text: near ? `2... and a kick out! ${y.name} survives the near fall!` : `${y.name} kicks out before the count!`, big: false, who: 'REF', toast: { text: `${y.name.toUpperCase()} KICKS OUT!`, kind: 'gold' } });
+      y.momentum = Math.min(100, y.momentum + 6);
       const l = colorLine('kickout'); if (l) events.push({ text: l, big: false, who: 'Color' });
+      return false;
+    }
+  };
+
+  // submission attempt via the submission finisher — resolved on submission skill vs durability/stamina, no health pool
+  const submissionAttempt = (x, y) => {
+    events.push({ text: `${x.name} locks in the ${x.submission_finisher} — ${y.name} is in serious trouble!`, big: true, who: 'PBP' });
+    const l1 = colorLine('submission'); if (l1) events.push({ text: l1, big: false, who: 'Color' });
+    const fatigue = (100 - y.stamina) / 100;
+    const skillEdge = (x.stats.submission - (y.stats.durability * .55 + y.stats.grappling * .25)) / 180;
+    const momEdge = (x.momentum - y.momentum) / 320;
+    let tapChance = .16 + skillEdge + fatigue * .3 + momEdge;
+    tapChance = Math.max(.08, Math.min(.88, tapChance));
+    x.meter = 0; x.meterReady = false;
+    if (Math.random() < tapChance) {
+      winner = x; loser = y; finish = 'Submission';
+      events.push({ text: `${y.name} has nowhere to go — TAP OUT! ${x.name} wins by submission!`, big: true, who: 'REF', toast: { text: 'TAP OUT!', kind: 'red' } });
+      playTap();
+      return true;
+    } else {
+      events.push({ text: `${y.name} claws to the ropes and forces the break!`, big: false, who: 'PBP' });
+      const l = colorLine('tapout'); if (l) events.push({ text: l, big: false, who: 'Color' });
+      y.momentum = Math.min(100, y.momentum + 8);
+      x.stamina = Math.max(5, x.stamina - 6);
       return false;
     }
   };
@@ -441,68 +491,78 @@ function sim(aBase, bBase, type, titleId) {
     let y = x === A ? B : A;
     const r = Math.random();
 
-    if (r < .07) {
+    // rare double-down spot for drama when the match is even
+    if (round > 10 && Math.abs(A.momentum - B.momentum) < 6 && Math.random() < .035) {
+      const l = colorLine('bothdown'); if (l) events.push({ text: l, big: true, who: 'PBP' });
+      A.momentum = 45 + Math.random() * 10; B.momentum = 45 + Math.random() * 10;
+    } else if (r < .07) {
       events.push({ text: `${y.name} reverses the attack out of nowhere!`, big: true, who: 'PBP', toast: { text: 'REVERSAL!', kind: 'gold' } });
       y.momentum = Math.min(100, y.momentum + 12);
       chargeMeter(y, 9);
       bumpCrowd(y, 5);
       const l = colorLine('reversal'); if (l) events.push({ text: l, big: false, who: 'Color' });
+    } else if (x.stamina < 25 && x.momentum < y.momentum - 20 && Math.random() < .12) {
+      events.push({ text: `${x.name} digs deep and fires off a desperation comeback!`, big: true, who: 'PBP', toast: { text: `${x.name.toUpperCase()} — COMEBACK!`, kind: 'gold' } });
+      x.momentum = Math.min(100, x.momentum + 20);
+      x.stamina = Math.min(100, x.stamina + 10);
+      chargeMeter(x, 12);
+      bumpCrowd(x, 6);
+      const l = colorLine('comeback'); if (l) events.push({ text: l, big: false, who: 'Color' });
     } else if ((type === 'Extreme Rules' || type === 'Falls Count Anywhere') && Math.random() < .08) {
       weaponSpot(x, y);
-    } else if (x.finisherReady && r < .5) {
-      hit(x, y, 'finisher');
-      if (type === 'Submission' || (type !== 'Submission' && x.stats.submission > 80 && Math.random() < .4)) {
-        events.push({ text: `${x.name} locks in ${x.finisher} — ${y.name} is fighting for the ropes!`, big: true, who: 'PBP' });
-        const tapChance = (x.stats.submission - y.stats.durability * .5 + (100 - y.hp) * .4) / 140;
-        if (Math.random() < Math.max(.12, tapChance)) {
-          winner = x; loser = y; finish = 'Submission';
-          events.push({ text: `${y.name} has no choice — TAP OUT! ${x.name} wins by submission!`, big: true, who: 'PBP', toast: { text: 'TAP OUT!', kind: 'red' } });
-          playTap();
-        } else {
-          events.push({ text: `${y.name} refuses to give up and battles to the ropes!`, big: false, who: 'PBP' });
-          const l = colorLine('tapout'); if (l) events.push({ text: l, big: false, who: 'Color' });
-        }
-      } else if (type !== 'Submission') {
+    } else if (x.meterReady) {
+      const subLean = .18 + (x.stats.submission - 70) / 180;
+      const goSubmission = submissionOnly || Math.random() < Math.max(.08, Math.min(.75, subLean));
+      if (goSubmission) {
+        submissionAttempt(x, y);
+      } else {
+        land(x, y, 'super');
         const l = colorLine('finisher'); if (l) events.push({ text: l, big: false, who: 'Color' });
-        coverAttempt(x, y);
+        coverAttempt(x, y, 'super');
       }
     } else if (r < .27) {
-      hit(x, y, 'signature');
-      if (type !== 'Submission' && Math.random() < .15) coverAttempt(x, y);
+      land(x, y, 'signature');
+      if (!submissionOnly && Math.random() < .16) coverAttempt(x, y, 'signature');
     } else {
-      hit(x, y, 'strike');
-    }
-
-    if (!winner && (y.hp <= 8 || x.stamina < 8) && Math.random() < .18 && type !== 'Submission') {
-      winner = x; loser = y; finish = y.hp <= 8 ? 'Referee Stoppage' : 'Pinfall';
-      events.push({ text: `The referee waves it off — ${x.name} has done enough!`, big: true, who: 'PBP' });
+      land(x, y, 'strike');
+      if (!submissionOnly && Math.random() < .05) coverAttempt(x, y, 'strike');
     }
 
     if (round % 8 === 0) { A.stamina = Math.max(0, A.stamina - 3); B.stamina = Math.max(0, B.stamina - 3); }
+
+    if (!winner && A.stamina < 6 && B.stamina < 6 && Math.random() < .1) {
+      draw = true; finish = 'No Contest — Exhaustion'; winner = null; loser = null;
+      events.push({ text: `Both competitors are completely spent — the referee has no choice but to call it!`, big: true, who: 'REF' });
+      break;
+    }
 
     if (winner && ironMan) {
       winner.falls++;
       events.push({ text: `FALL ${winner === A ? A.falls : B.falls} goes to ${winner.name}! ${A.falls}-${B.falls} on falls.`, big: true, who: 'PBP' });
       if (winner.falls < targetFalls && round < maxRounds - 5) {
-        A.hp = Math.min(100, A.hp + 35); B.hp = Math.min(100, B.hp + 35);
+        A.stamina = Math.min(100, A.stamina + 30); B.stamina = Math.min(100, B.stamina + 30);
         A.momentum = 50; B.momentum = 50;
-        A.finisherMeter = 0; B.finisherMeter = 0; A.finisherReady = false; B.finisherReady = false;
+        A.meter = 0; B.meter = 0; A.meterReady = false; B.meterReady = false;
         winner = null; loser = null;
       }
     }
   }
 
-  if (!winner) {
+  if (!winner && !draw) {
     if (ironMan) {
       if (A.falls === B.falls) { draw = true; finish = 'Time Limit Draw'; events.push({ text: `Time expires with the score tied at ${A.falls}-${B.falls}! It's a draw!`, big: true, who: 'PBP' }); }
       else { winner = A.falls > B.falls ? A : B; loser = winner === A ? B : A; finish = 'Decision on Falls'; }
+    } else if (A.control === B.control) {
+      draw = true; finish = 'Time Limit Draw';
+      events.push({ text: `Time expires with nothing to separate them — this one's a draw!`, big: true, who: 'PBP' });
     } else {
-      winner = A.hp > B.hp ? A : B; loser = winner === A ? B : A; finish = 'Decision';
+      winner = A.control > B.control ? A : B; loser = winner === A ? B : A; finish = 'Decision';
+      events.push({ text: `Time expires — the judges' decision goes to ${winner.name}, who controlled the majority of the match!`, big: true, who: 'REF' });
     }
   }
 
   // star rating: closeness, drama length, average quality, crowd heat, small randomness
-  const closeness = draw ? 5 : Math.max(0, 100 - Math.abs((winner ? winner.hp : 50) - (loser ? loser.hp : 50)));
+  const closeness = draw ? 5 : Math.max(0, 100 - Math.abs((winner ? winner.control : 50) - (loser ? loser.control : 50)) * 2.2);
   const quality = (aBase.rating + bBase.rating) / 2;
   const raw = closeness * .25 + quality * .4 + crowd * .2 + Math.min(round, 60) * .2 / 3 + Math.random() * 8;
   const stars = Math.max(1, Math.min(5, Math.round(raw / 20)));
@@ -534,7 +594,7 @@ $('#startMatch').onclick = () => {
   const showFighter = (w) => {
     content.innerHTML = `
       <div class="ename ${w.alignment === 'Face' ? 'face' : 'heel'}">${w.name}</div>
-      <div class="enick">"${w.nickname}"</div>
+      <div class="enick">"${w.nicknames[0]}"</div>
       <div class="eintro">${w.entrance}</div>`;
   };
 
@@ -572,13 +632,12 @@ function renderMatch(r, type, titleId, aBase, bBase) {
   const plate = (f, side) => `
     <div class="plate${side === 'right' ? ' right' : ''}">
       <div class="plate-top"><h3>${f.name}</h3>${type === 'Iron Man' ? `<span class="falls">Falls: ${f.falls}</span>` : ''}</div>
-      <div class="hp-shell${f.hp < 30 ? ' low' : ''}"><i style="width:${f.hp}%"></i></div>
       <div class="sub-bars">
-        <div><div class="mini-label">Stamina</div><div class="mini-bar stamina"><i style="width:${f.stamina}%"></i></div></div>
+        <div><div class="mini-label">Stamina</div><div class="mini-bar stamina${f.stamina < 25 ? ' low' : ''}"><i style="width:${f.stamina}%"></i></div></div>
         <div><div class="mini-label">Momentum</div><div class="mini-bar momentum"><i style="width:${f.momentum}%"></i></div></div>
       </div>
-      <div class="finisher-shell${f.finisherMeter >= 100 ? ' ready' : ''}"><i style="width:${f.finisherMeter}%"></i></div>
-      <div class="finisher-label${f.finisherMeter >= 100 ? ' ready' : ''}">${f.finisherMeter >= 100 ? 'FINISHER READY' : 'Finisher Meter'}</div>
+      <div class="finisher-shell${f.meter >= 100 ? ' ready' : ''}"><i style="width:${f.meter}%"></i></div>
+      <div class="finisher-label${f.meter >= 100 ? ' ready' : ''}">${f.meter >= 100 ? 'FINISH READY' : 'Finish Meter'}</div>
     </div>`;
 
   const tugA = Math.round((r.A.momentum / Math.max(1, r.A.momentum + r.B.momentum)) * 100);
