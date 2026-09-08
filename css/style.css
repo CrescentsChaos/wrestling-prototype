@@ -179,15 +179,13 @@ h2{font:800 clamp(30px,6vw,44px) 'Barlow Condensed';margin:5px 0 20px}
 .plate-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
 .plate h3{font:800 clamp(15px,3.6vw,22px) 'Barlow Condensed';margin:0;overflow-wrap:anywhere}
 .plate .falls{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
-.hp-shell{height:14px;background:#20222a;border-radius:3px;overflow:hidden;margin-top:8px;border:1px solid #000}
-.hp-shell i{display:block;height:100%;background:linear-gradient(90deg,#2fae5f,var(--green));transition:width .35s;box-shadow:0 0 10px #51c87888}
-.hp-shell.low i{background:linear-gradient(90deg,#a83232,var(--red))}
-.sub-bars{display:flex;gap:5px;margin-top:8px}
+.sub-bars{display:flex;gap:5px;margin-top:2px}
 .plate.right .sub-bars{flex-direction:row-reverse}
 .sub-bars div{flex:1}
-.mini-bar{height:5px;background:#20222a;border-radius:3px;overflow:hidden}
+.mini-bar{height:8px;background:#20222a;border-radius:3px;overflow:hidden;border:1px solid #000}
 .mini-bar i{display:block;height:100%;transition:width .35s}
 .mini-bar.stamina i{background:var(--blue)}
+.mini-bar.stamina.low i{background:linear-gradient(90deg,#a83232,var(--red))}
 .mini-bar.momentum i{background:var(--accent)}
 .mini-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
 .finisher-shell{height:9px;background:#20222a;border-radius:3px;overflow:hidden;margin-top:8px;border:1px solid #000}
@@ -253,6 +251,9 @@ h2{font:800 clamp(30px,6vw,44px) 'Barlow Condensed';margin:5px 0 20px}
 .modal-radar svg{max-width:280px;width:100%}
 .moveset{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .moveset span{background:#0d0f13;border:1px solid var(--line);border-radius:4px;padding:6px 10px;font-size:12px}
+.moveset span.sig{border-color:var(--blue);color:var(--blue)}
+.moveset span.fin-super{border-color:var(--accent);color:var(--accent);font-weight:800}
+.moveset span.fin-sub{border-color:var(--red);color:var(--red);font-weight:800}
 
 /* ================= RESPONSIVE ================= */
 
