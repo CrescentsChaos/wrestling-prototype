@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>WrestleForge</title>
+<title>WrestleForge 2K</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -18,29 +18,31 @@
     <button data-screen="match">Match</button>
     <button data-screen="history">History</button>
   </nav>
-  <div class="money">★ <span id="coins">1000</span></div>
+  <div class="hud-right">
+    <button id="soundToggle" class="icon-btn" title="Toggle sound">🔊</button>
+    <div class="money">★ <span id="coins">1000</span></div>
+  </div>
 </header>
 
 <main>
 
 <section id="home" class="screen active">
-  <div class="hero">
-    <div>
-      <p class="eyebrow">WELCOME TO THE ARENA</p>
-      <h1>BUILD. FIGHT.<br><em>MAKE HISTORY.</em></h1>
-      <p>Create dream matchups, manage a roster and simulate every dramatic moment from the opening bell to the pinfall &mdash; strikes, suplexes, submissions, signatures, finishers, kick&#8209;outs and title changes.</p>
-      <button class="primary" id="quickMatch">START QUICK MATCH →</button>
-    </div>
-    <div class="hero-card"><div class="ring"><span>RING</span></div></div>
+
+  <div class="spotlight" id="spotlight"></div>
+
+  <div class="quick-actions">
+    <button class="qa qa-main" id="quickMatch"><span>EXHIBITION</span><small>Jump into a match now</small></button>
+    <button class="qa" data-screen="roster"><span>ROSTER</span><small>Scout the locker room</small></button>
+    <button class="qa" data-screen="titles"><span>GOLD</span><small>See who's holding gold</small></button>
   </div>
 
-  <div class="section-head" style="margin-top:50px"><div><p class="eyebrow">GOLD ON THE LINE</p><h2>CURRENT CHAMPIONS</h2></div></div>
+  <div class="section-head" style="margin-top:8px"><div><p class="eyebrow">GOLD ON THE LINE</p><h2>CURRENT CHAMPIONS</h2></div></div>
   <div id="champGrid" class="champ-grid"></div>
 
   <div class="grid3" style="margin-top:16px">
-    <article><span class="icon">⚡</span><h3>FULL MATCH ENGINE</h3><p>Momentum, stamina, damage, reversals, signatures, finishers, near falls, weapons and interference.</p></article>
-    <article><span class="icon">♛</span><h3>DEEP ROSTER SYSTEM</h3><p>Every wrestler has a full profile: bio, hometown, moveset, career record, traits and championship history.</p></article>
-    <article><span class="icon">▣</span><h3>MATCH HISTORY</h3><p>Track winners, match duration, finish type, star rating and title changes across every show.</p></article>
+    <article><span class="icon">⚡</span><h3>LIVE BROADCAST ENGINE</h3><p>Momentum swings, finisher meters, reversals, near falls and two-man commentary call every second of the action.</p></article>
+    <article><span class="icon">♛</span><h3>ATTRIBUTE WHEEL PROFILES</h3><p>Every wrestler has a full radar-chart breakdown, bio, moveset, career record and championship history.</p></article>
+    <article><span class="icon">▣</span><h3>SHOW ARCHIVE</h3><p>Track winners, finish types, star ratings and title changes across every show you book.</p></article>
   </div>
 </section>
 
@@ -71,22 +73,56 @@
 </section>
 
 <section id="match" class="screen">
-  <div class="section-head"><div><p class="eyebrow">BOOK THE SHOW</p><h2>CREATE MATCH</h2></div></div>
-  <div class="match-builder">
-    <div><label>WRESTLER 1</label><select id="p1"></select></div>
-    <div class="vs">VS</div>
-    <div><label>WRESTLER 2</label><select id="p2"></select></div>
-    <div><label>MATCH TYPE</label><select id="matchType">
-      <option>Singles</option>
-      <option>Falls Count Anywhere</option>
-      <option>Extreme Rules</option>
-      <option>Iron Man</option>
-      <option>Submission</option>
-    </select></div>
-    <div><label>TITLE ON THE LINE</label><select id="titleMatch"><option value="">None</option></select></div>
-    <button class="primary" id="startMatch">RING THE BELL →</button>
+  <div class="section-head"><div><p class="eyebrow">BOOK THE SHOW</p><h2>TALE OF THE TAPE</h2></div></div>
+
+  <div class="tape-select">
+    <div class="fighter-pick">
+      <label>WRESTLER 1</label>
+      <div class="pick-tile" id="p1Tile">
+        <span class="pick-ovr" id="p1Ovr"></span>
+        <img id="p1Img" alt="">
+        <div class="pick-name" id="p1Name"></div>
+      </div>
+      <select id="p1"></select>
+    </div>
+    <div class="vs-badge"><span>VS</span></div>
+    <div class="fighter-pick">
+      <label>WRESTLER 2</label>
+      <div class="pick-tile" id="p2Tile">
+        <span class="pick-ovr" id="p2Ovr"></span>
+        <img id="p2Img" alt="">
+        <div class="pick-name" id="p2Name"></div>
+      </div>
+      <select id="p2"></select>
+    </div>
   </div>
-  <div id="entrancePanel" class="entrance-panel hidden"></div>
+
+  <div id="tapeCompare" class="tape-compare"></div>
+
+  <div class="setup-row">
+    <div>
+      <label class="setup-label">MATCH TYPE</label>
+      <div class="chip-group wrap" id="matchTypeChips">
+        <button class="chip active" data-type="Singles">Singles</button>
+        <button class="chip" data-type="Falls Count Anywhere">Falls Count Anywhere</button>
+        <button class="chip" data-type="Extreme Rules">Extreme Rules</button>
+        <button class="chip" data-type="Iron Man">Iron Man</button>
+        <button class="chip" data-type="Submission">Submission</button>
+      </div>
+    </div>
+    <div>
+      <label class="setup-label">TITLE ON THE LINE</label>
+      <select id="titleMatch"><option value="">None</option></select>
+    </div>
+  </div>
+
+  <button class="primary big" id="startMatch">ENTER THE ARENA →</button>
+
+  <div id="entranceOverlay" class="entrance-overlay hidden">
+    <div class="entrance-flash"></div>
+    <div class="entrance-content" id="entranceContent"></div>
+  </div>
+
   <div id="matchPanel" class="match-panel hidden"></div>
 </section>
 
@@ -100,6 +136,8 @@
 <div id="wrestlerModal" class="modal-overlay hidden">
   <div class="modal-card" id="modalCard"></div>
 </div>
+
+<div id="toastLayer" class="toast-layer"></div>
 
 </div>
 <script src="js/app.js"></script>
