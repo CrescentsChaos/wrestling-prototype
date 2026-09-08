@@ -1,11 +1,12 @@
 /* ============================================================
-   WRESTLEFORGE — game state
+   WRESTLEFORGE 2K — game state
    ============================================================ */
 let DB = null;
 let records = JSON.parse(localStorage.getItem('wf_records') || '{}');   // {id:{wins,losses,draws}}
 let titleState = JSON.parse(localStorage.getItem('wf_titles') || '{}'); // {titleId: championWrestlerId}
 let history = JSON.parse(localStorage.getItem('wf_history') || '[]');
 let coins = parseInt(localStorage.getItem('wf_coins') || '1000', 10);
+let soundOn = localStorage.getItem('wf_sound') !== '0';
 
 const $ = s => document.querySelector(s);
 const byId = id => DB.wrestlers.find(w => w.id === id);
@@ -17,11 +18,87 @@ function saveCoins() { localStorage.setItem('wf_coins', String(coins)); }
 function recordOf(id) { return records[id] || (records[id] = { wins: 0, losses: 0, draws: 0 }); }
 
 /* ============================================================
+   AUDIO — lightweight synthesized SFX, no external files
+   ============================================================ */
+let actx = null;
+function ac() { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); return actx; }
+function beep(freq, dur, type, gain, delay) {
+  if (!soundOn) return;
+  try {
+    const c = ac();
+    const osc = c.createOscillator(), g = c.createGain();
+    osc.type = type || 'sine'; osc.frequency.value = freq;
+    const t0 = c.currentTime + (delay || 0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain || 0.18, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  } catch (e) { /* audio unsupported — fail silently */ }
+}
+function noiseBurst(dur, gain, delay) {
+  if (!soundOn) return;
+  try {
+    const c = ac();
+    const bufferSize = Math.floor(c.sampleRate * dur);
+    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = c.createBufferSource(); src.buffer = buffer;
+    const g = c.createGain();
+    const t0 = c.currentTime + (delay || 0);
+    g.gain.setValueAtTime(gain || 0.15, t0);
+    src.connect(g); g.connect(c.destination);
+    src.start(t0);
+  } catch (e) { /* ignore */ }
+}
+function playBell() { beep(1500, .35, 'square', .12, 0); beep(1500, .35, 'square', .1, .45); beep(1500, .45, 'square', .1, .9); }
+function playPop() { noiseBurst(.6, .1, 0); beep(300, .5, 'sawtooth', .05, 0); }
+function playImpact() { beep(110, .18, 'sine', .22, 0); noiseBurst(.12, .08, 0); }
+function playFinisher() { beep(80, .5, 'sawtooth', .25, 0); beep(220, .35, 'square', .12, .08); noiseBurst(.3, .12, .05); }
+function playTap() { beep(700, .08, 'square', .1, 0); beep(700, .08, 'square', .1, .12); beep(700, .12, 'square', .12, .24); }
+
+function updateSoundIcon() { $('#soundToggle').textContent = soundOn ? '🔊' : '🔇'; }
+$('#soundToggle').onclick = () => { soundOn = !soundOn; localStorage.setItem('wf_sound', soundOn ? '1' : '0'); updateSoundIcon(); if (soundOn) beep(660, .08, 'sine', .1, 0); };
+updateSoundIcon();
+
+/* ============================================================
+   RADAR CHART (attribute wheel)
+   ============================================================ */
+const RADAR_KEYS = ['strength', 'striking', 'grappling', 'submission', 'speed', 'stamina', 'durability', 'charisma'];
+function radarSVG(stats) {
+  const n = RADAR_KEYS.length, size = 260, cx = size / 2, cy = size / 2, R = 92;
+  const pt = (i, val) => {
+    const ang = -Math.PI / 2 + (i * 2 * Math.PI / n);
+    const r = R * (val / 100);
+    return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)];
+  };
+  const ring = (frac) => RADAR_KEYS.map((_, i) => pt(i, 100 * frac).join(',')).join(' ');
+  const dataPts = RADAR_KEYS.map((k, i) => pt(i, stats[k]).join(',')).join(' ');
+  const labels = RADAR_KEYS.map((k, i) => {
+    const ang = -Math.PI / 2 + (i * 2 * Math.PI / n);
+    const lx = cx + (R + 22) * Math.cos(ang), ly = cy + (R + 22) * Math.sin(ang);
+    return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle" fill="#9298a5" font-size="9" font-family="Inter" letter-spacing="1">${k.slice(0, 4).toUpperCase()}</text>`;
+  }).join('');
+  const spokes = RADAR_KEYS.map((_, i) => {
+    const [x, y] = pt(i, 100);
+    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#292d36" stroke-width="1"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="${ring(1)}" fill="none" stroke="#292d36" stroke-width="1"/>
+    <polygon points="${ring(.66)}" fill="none" stroke="#292d36" stroke-width="1"/>
+    <polygon points="${ring(.33)}" fill="none" stroke="#292d36" stroke-width="1"/>
+    ${spokes}
+    <polygon points="${dataPts}" fill="#f0b42933" stroke="#f0b429" stroke-width="2"/>
+    ${labels}
+  </svg>`;
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 async function init() {
   DB = await fetch('wrestlers.json').then(r => r.json());
-  // seed title holders on first run only
   DB.titles.forEach(t => { if (!(t.id in titleState)) titleState[t.id] = t.champion; });
   saveTitles();
   $('#coins').textContent = coins;
@@ -32,15 +109,47 @@ async function init() {
   renderChampions();
   renderTitlesScreen();
   renderHistory();
+  renderSpotlight();
 }
 
 function nav(id) {
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
   $('#' + id).classList.add('active');
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x.dataset.screen === id));
+  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => nav(b.dataset.screen));
+document.querySelectorAll('nav button, .qa[data-screen]').forEach(b => b.onclick = () => nav(b.dataset.screen));
 $('#quickMatch').onclick = () => { nav('match'); $('#startMatch').click(); };
+
+/* ============================================================
+   HOME — SPOTLIGHT
+   ============================================================ */
+let spotlightIdx = 0, spotlightTimer = null;
+function renderSpotlight() {
+  const top = [...DB.wrestlers].sort((a, b) => b.rating - a.rating).slice(0, 5);
+  const draw = () => {
+    const w = top[spotlightIdx % top.length];
+    const belts = currentChampionTitles(w.id);
+    $('#spotlight').innerHTML = `
+      <img class="spotlight-img" src="${w.image}" alt="${w.name}">
+      <div class="spotlight-body">
+        <span class="spotlight-tag">${belts.length ? 'CHAMPION' : 'SUPERSTAR SPOTLIGHT'}</span>
+        <h1>${w.name.split(' ')[0].toUpperCase()}<br><em>${w.name.split(' ').slice(1).join(' ').toUpperCase()}</em></h1>
+        <p>"${w.nickname}" &mdash; ${w.archetype} out of ${w.hometown}. ${w.bio}</p>
+        <div class="spotlight-stats">
+          <div><b>${w.rating}</b><span>Overall</span></div>
+          <div><b>${w.weight_class.split(' ')[0]}</b><span>${w.weight_class.includes(' ') ? w.weight_class.split(' ').slice(1).join(' ') : 'Class'}</span></div>
+          <div><b>${belts.length || '—'}</b><span>Title${belts.length === 1 ? '' : 's'}</span></div>
+        </div>
+        <button class="primary" onclick="openWrestlerModal('${w.id}')">VIEW PROFILE →</button>
+        <div class="spotlight-dots" id="spotDots"></div>
+      </div>`;
+    $('#spotDots').innerHTML = top.map((_, i) => `<span class="${i === spotlightIdx % top.length ? 'active' : ''}" data-i="${i}"></span>`).join('');
+    document.querySelectorAll('#spotDots span').forEach(d => d.onclick = () => { spotlightIdx = +d.dataset.i; draw(); resetSpotTimer(); });
+  };
+  function resetSpotTimer() { clearInterval(spotlightTimer); spotlightTimer = setInterval(() => { spotlightIdx++; draw(); }, 6500); }
+  draw(); resetSpotTimer();
+}
 
 /* ============================================================
    ROSTER
@@ -130,11 +239,8 @@ function openWrestlerModal(id) {
           <div>Signature / Finisher: <b>${w.signature} / ${w.finisher}</b></div>
         </div>
         <p class="modal-bio">${w.bio}</p>
-        <div class="modal-stats">
-          ${Object.entries(w.stats).map(([k, v]) =>
-            `<div class="stat"><div class="stat-line"><span>${k}</span><span>${v}</span></div><div class="bar"><i style="width:${v}%"></i></div></div>`
-          ).join('')}
-        </div>
+        <p class="eyebrow">ATTRIBUTE WHEEL</p>
+        <div class="modal-radar">${radarSVG(w.stats)}</div>
         <p class="eyebrow" style="margin-top:16px">MOVESET</p>
         <div class="moveset">${w.moveset.map(m => `<span>${m}</span>`).join('')}</div>
       </div>
@@ -184,20 +290,80 @@ function fillTitleSelect() {
 }
 
 /* ============================================================
-   MATCH SETUP
+   MATCH SETUP — tale of the tape
    ============================================================ */
+let activeMatchType = 'Singles';
 function fillSelects() {
   ['p1', 'p2'].forEach(id => $('#' + id).innerHTML = DB.wrestlers.map(w =>
     `<option value="${w.id}">${w.name} — ${w.rating} OVR</option>`).join(''));
   $('#p2').selectedIndex = 1;
+  updatePickTile(1); updatePickTile(2);
+  renderTapeCompare();
+  $('#p1').onchange = () => { updatePickTile(1); renderTapeCompare(); };
+  $('#p2').onchange = () => { updatePickTile(2); renderTapeCompare(); };
 }
+
+function updatePickTile(side) {
+  const w = byId($('#p' + side).value);
+  $('#p' + side + 'Img').src = w.image; $('#p' + side + 'Img').alt = w.name;
+  $('#p' + side + 'Name').textContent = w.name;
+  $('#p' + side + 'Ovr').textContent = w.rating;
+}
+
+function renderTapeCompare() {
+  const a = byId($('#p1').value), b = byId($('#p2').value);
+  if (!a || !b) return;
+  const rows = RADAR_KEYS.map(k => `
+    <div class="tape-row">
+      <span class="tv h">${a.stats[k]}</span>
+      <div class="tape-bar left"><i style="width:${a.stats[k]}%"></i></div>
+      <span class="tlabel">${k}</span>
+      <div class="tape-bar right"><i style="width:${b.stats[k]}%"></i></div>
+      <span class="tv">${b.stats[k]}</span>
+    </div>`).join('');
+  $('#tapeCompare').innerHTML = `
+    <div class="tape-head"><span>${a.name}</span><span>${b.name}</span></div>
+    ${rows}`;
+}
+
+document.querySelectorAll('#matchTypeChips .chip').forEach(chip => chip.onclick = () => {
+  document.querySelectorAll('#matchTypeChips .chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  activeMatchType = chip.dataset.type;
+});
 
 const WEAPONS = ['a steel chair', 'the ring steps', 'a kendo stick', 'the announce table', 'a trash can'];
 
 /* ============================================================
+   TOASTS
+   ============================================================ */
+function addToast(text, kind) {
+  const layer = $('#toastLayer');
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'red' ? ' red' : '');
+  el.textContent = text;
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 1750);
+}
+
+const COLOR_LINES = {
+  reversal: ["What a counter — the crowd can't believe it!", "Reversed! That changes everything.", "Incredible awareness right there."],
+  signature: ["That's a signature we've seen end matches before!", "Big move — the momentum has shifted!", "The crowd is coming alive!"],
+  finisher: ["THIS COULD BE IT!", "That's the finishing move — get the referee in position!", "It's over if this connects clean!"],
+  kickout: ["I don't believe it — a kick out!", "How did they survive that?!", "This crowd is on its feet!"],
+  tapout: ["It's academic now — nowhere to go.", "Total agony — this could be it.", ""],
+  weapon: ["This match has gone off the rails!", "No disqualifications — anything goes here!", "That's going to leave a mark."]
+};
+function colorLine(kind) {
+  const pool = COLOR_LINES[kind]; if (!pool || !pool.length) return null;
+  const line = pool[Math.floor(Math.random() * pool.length)];
+  return line || null;
+}
+
+/* ============================================================
    MATCH ENGINE
    ============================================================ */
-function freshState(w) { return { ...w, hp: 100, stamina: 100, momentum: 50, falls: 0 }; }
+function freshState(w) { return { ...w, hp: 100, stamina: 100, momentum: 50, falls: 0, finisherMeter: 0, finisherReady: false }; }
 
 function sim(aBase, bBase, type, titleId) {
   const A = freshState(aBase), B = freshState(bBase);
@@ -213,6 +379,14 @@ function sim(aBase, bBase, type, titleId) {
     crowd = Math.max(0, Math.min(100, crowd));
   };
 
+  const chargeMeter = (x, amount) => {
+    x.finisherMeter = Math.min(100, x.finisherMeter + amount);
+    if (x.finisherMeter >= 100 && !x.finisherReady) {
+      x.finisherReady = true;
+      events.push({ text: `${x.name}'s finishing move is fired up and ready to go!`, big: true, who: 'PBP', toast: { text: `${x.name.toUpperCase()} — FINISHER READY`, kind: 'gold' } });
+    }
+  };
+
   const hit = (x, y, kind) => {
     const base = x.stats.striking * .35 + x.stats.grappling * .3 + x.stats.strength * .15 + x.stats.speed * .2;
     const defense = y.stats.durability * .35 + y.stats.speed * .15 + y.stats.grappling * .2 + y.stats.stamina * .3;
@@ -224,8 +398,14 @@ function sim(aBase, bBase, type, titleId) {
     y.momentum = Math.max(0, y.momentum - 7);
     x.stamina = Math.max(5, x.stamina - (5 + Math.random() * 8));
     const move = kind === 'signature' ? x.signature : kind === 'finisher' ? x.finisher : x.moveset[Math.floor(Math.random() * x.moveset.length)];
-    events.push({ text: `${x.name} hits ${y.name} with${kind === 'strike' ? ' a' : ''} ${move} — ${dmg} damage.`, big: kind !== 'strike' });
+    events.push({ text: `${x.name} hits ${y.name} with${kind === 'strike' ? ' a' : ''} ${move} — ${dmg} damage.`, big: kind !== 'strike', who: 'PBP' });
     bumpCrowd(x, kind === 'finisher' ? 6 : kind === 'signature' ? 4 : 2);
+    if (kind === 'finisher') { x.finisherMeter = 0; x.finisherReady = false; }
+    else chargeMeter(x, kind === 'signature' ? 16 : 7);
+    if (Math.random() < .3) {
+      const line = colorLine(kind === 'strike' ? null : kind);
+      if (line) events.push({ text: line, big: false, who: 'Color' });
+    }
     return dmg;
   };
 
@@ -234,8 +414,24 @@ function sim(aBase, bBase, type, titleId) {
     const dmg = 14 + Math.floor(Math.random() * 14);
     y.hp = Math.max(0, y.hp - dmg);
     x.momentum = Math.min(100, x.momentum + 10);
-    events.push({ text: `${x.name} introduces ${w} into the match, cracking it across ${y.name} — ${dmg} damage!`, big: true });
+    chargeMeter(x, 10);
+    events.push({ text: `${x.name} introduces ${w} into the match, cracking it across ${y.name} — ${dmg} damage!`, big: true, who: 'PBP', toast: { text: 'NO HOLDS BARRED', kind: 'red' } });
+    if (Math.random() < .4) { const l = colorLine('weapon'); if (l) events.push({ text: l, big: false, who: 'Color' }); }
     bumpCrowd(x, 8);
+  };
+
+  const coverAttempt = (x, y) => {
+    events.push({ text: `${x.name} goes for the cover!`, big: true, who: 'PBP' });
+    const kickOutChance = y.hp < 30 ? .28 : .78;
+    if (Math.random() > kickOutChance) {
+      winner = x; loser = y; finish = 'Pinfall';
+      events.push({ text: `1...2...3! ${x.name} wins it!`, big: true, who: 'PBP' });
+      return true;
+    } else {
+      events.push({ text: `${y.name} kicks out!`, big: false, who: 'PBP', toast: { text: `${y.name.toUpperCase()} KICKS OUT!`, kind: 'gold' } });
+      const l = colorLine('kickout'); if (l) events.push({ text: l, big: false, who: 'Color' });
+      return false;
+    }
   };
 
   while (!winner && round < maxRounds) {
@@ -246,51 +442,51 @@ function sim(aBase, bBase, type, titleId) {
     const r = Math.random();
 
     if (r < .07) {
-      events.push({ text: `${y.name} reverses the attack out of nowhere!`, big: true });
+      events.push({ text: `${y.name} reverses the attack out of nowhere!`, big: true, who: 'PBP', toast: { text: 'REVERSAL!', kind: 'gold' } });
       y.momentum = Math.min(100, y.momentum + 12);
+      chargeMeter(y, 9);
       bumpCrowd(y, 5);
+      const l = colorLine('reversal'); if (l) events.push({ text: l, big: false, who: 'Color' });
     } else if ((type === 'Extreme Rules' || type === 'Falls Count Anywhere') && Math.random() < .08) {
       weaponSpot(x, y);
-    } else if (r < .13) {
+    } else if (x.finisherReady && r < .5) {
       hit(x, y, 'finisher');
       if (type === 'Submission' || (type !== 'Submission' && x.stats.submission > 80 && Math.random() < .4)) {
-        events.push({ text: `${x.name} locks in ${x.finisher} — ${y.name} is fighting for the ropes!`, big: true });
+        events.push({ text: `${x.name} locks in ${x.finisher} — ${y.name} is fighting for the ropes!`, big: true, who: 'PBP' });
         const tapChance = (x.stats.submission - y.stats.durability * .5 + (100 - y.hp) * .4) / 140;
         if (Math.random() < Math.max(.12, tapChance)) {
           winner = x; loser = y; finish = 'Submission';
-          events.push({ text: `${y.name} has no choice — TAP OUT! ${x.name} wins by submission!`, big: true });
+          events.push({ text: `${y.name} has no choice — TAP OUT! ${x.name} wins by submission!`, big: true, who: 'PBP', toast: { text: 'TAP OUT!', kind: 'red' } });
+          playTap();
         } else {
-          events.push({ text: `${y.name} refuses to give up and battles to the ropes!`, big: false });
+          events.push({ text: `${y.name} refuses to give up and battles to the ropes!`, big: false, who: 'PBP' });
+          const l = colorLine('tapout'); if (l) events.push({ text: l, big: false, who: 'Color' });
         }
       } else if (type !== 'Submission') {
-        events.push({ text: `${x.name} goes for the cover!`, big: true });
-        const kickOutChance = y.hp < 30 ? .28 : .78;
-        if (Math.random() > kickOutChance) {
-          winner = x; loser = y; finish = 'Pinfall';
-          events.push({ text: `1...2...3! ${x.name} wins it!`, big: true });
-        } else {
-          events.push({ text: `${y.name} kicks out!`, big: false });
-        }
+        const l = colorLine('finisher'); if (l) events.push({ text: l, big: false, who: 'Color' });
+        coverAttempt(x, y);
       }
-    } else if (r < .23) {
+    } else if (r < .27) {
       hit(x, y, 'signature');
+      if (type !== 'Submission' && Math.random() < .15) coverAttempt(x, y);
     } else {
       hit(x, y, 'strike');
     }
 
     if (!winner && (y.hp <= 8 || x.stamina < 8) && Math.random() < .18 && type !== 'Submission') {
       winner = x; loser = y; finish = y.hp <= 8 ? 'Referee Stoppage' : 'Pinfall';
-      events.push({ text: `The referee waves it off — ${x.name} has done enough!`, big: true });
+      events.push({ text: `The referee waves it off — ${x.name} has done enough!`, big: true, who: 'PBP' });
     }
 
     if (round % 8 === 0) { A.stamina = Math.max(0, A.stamina - 3); B.stamina = Math.max(0, B.stamina - 3); }
 
     if (winner && ironMan) {
       winner.falls++;
-      events.push({ text: `FALL ${winner === A ? A.falls : B.falls} goes to ${winner.name}! ${A.falls}-${B.falls} on falls.`, big: true });
+      events.push({ text: `FALL ${winner === A ? A.falls : B.falls} goes to ${winner.name}! ${A.falls}-${B.falls} on falls.`, big: true, who: 'PBP' });
       if (winner.falls < targetFalls && round < maxRounds - 5) {
         A.hp = Math.min(100, A.hp + 35); B.hp = Math.min(100, B.hp + 35);
         A.momentum = 50; B.momentum = 50;
+        A.finisherMeter = 0; B.finisherMeter = 0; A.finisherReady = false; B.finisherReady = false;
         winner = null; loser = null;
       }
     }
@@ -298,7 +494,7 @@ function sim(aBase, bBase, type, titleId) {
 
   if (!winner) {
     if (ironMan) {
-      if (A.falls === B.falls) { draw = true; finish = 'Time Limit Draw'; events.push({ text: `Time expires with the score tied at ${A.falls}-${B.falls}! It's a draw!`, big: true }); }
+      if (A.falls === B.falls) { draw = true; finish = 'Time Limit Draw'; events.push({ text: `Time expires with the score tied at ${A.falls}-${B.falls}! It's a draw!`, big: true, who: 'PBP' }); }
       else { winner = A.falls > B.falls ? A : B; loser = winner === A ? B : A; finish = 'Decision on Falls'; }
     } else {
       winner = A.hp > B.hp ? A : B; loser = winner === A ? B : A; finish = 'Decision';
@@ -323,23 +519,34 @@ function sim(aBase, bBase, type, titleId) {
 }
 
 /* ============================================================
-   RUN MATCH
+   ENTRANCE CINEMATIC + RUN MATCH
    ============================================================ */
 $('#startMatch').onclick = () => {
   const a = byId($('#p1').value), b = byId($('#p2').value);
   if (a.id === b.id) return alert('Choose two different wrestlers.');
-  const type = $('#matchType').value;
+  const type = activeMatchType;
   const titleId = $('#titleMatch').value || null;
 
-  const ep = $('#entrancePanel');
-  ep.classList.remove('hidden');
-  ep.innerHTML = `<p><b>${a.name}</b> — ${a.entrance}</p><p><b>${b.name}</b> — ${b.entrance}</p><p class="eyebrow">Ringing the bell…</p>`;
+  const overlay = $('#entranceOverlay'), content = $('#entranceContent');
   $('#matchPanel').classList.add('hidden');
+  overlay.classList.remove('hidden');
 
+  const showFighter = (w) => {
+    content.innerHTML = `
+      <div class="ename ${w.alignment === 'Face' ? 'face' : 'heel'}">${w.name}</div>
+      <div class="enick">"${w.nickname}"</div>
+      <div class="eintro">${w.entrance}</div>`;
+  };
+
+  playPop();
+  showFighter(a);
+  setTimeout(() => { playPop(); showFighter(b); }, 1000);
+  setTimeout(() => { content.innerHTML = `<div class="entrance-vs">VS</div>`; playBell(); }, 2000);
   setTimeout(() => {
+    overlay.classList.add('hidden');
     const r = sim(a, b, type, titleId);
     renderMatch(r, type, titleId, a, b);
-  }, 700);
+  }, 2650);
 };
 
 function starString(n) { return '★'.repeat(n) + '☆'.repeat(5 - n); }
@@ -347,7 +554,8 @@ function starString(n) { return '★'.repeat(n) + '☆'.repeat(5 - n); }
 function renderMatch(r, type, titleId, aBase, bBase) {
   const p = $('#matchPanel');
   p.classList.remove('hidden');
-  const log = r.events.slice(-26).reverse().map(e => `<div class="event${e.big ? ' big' : ''}">${e.text}</div>`).join('');
+  const log = r.events.slice(-30).reverse().map(e =>
+    `<div class="event${e.big ? ' big' : ''}">${e.who ? `<span class="who">${e.who}</span>` : ''}${e.text}</div>`).join('');
 
   let resultLine;
   if (r.draw) resultLine = `<h2>DRAW</h2><p>${r.finish} • ${r.rounds} exchanges</p>`;
@@ -361,37 +569,47 @@ function renderMatch(r, type, titleId, aBase, bBase) {
     else if (r.titleResult === 'retained-draw') titleBanner = `<div class="title-change" style="color:var(--muted)">Champion retains the ${t.name} — the title cannot change hands on a draw.</div>`;
   }
 
+  const plate = (f, side) => `
+    <div class="plate${side === 'right' ? ' right' : ''}">
+      <div class="plate-top"><h3>${f.name}</h3>${type === 'Iron Man' ? `<span class="falls">Falls: ${f.falls}</span>` : ''}</div>
+      <div class="hp-shell${f.hp < 30 ? ' low' : ''}"><i style="width:${f.hp}%"></i></div>
+      <div class="sub-bars">
+        <div><div class="mini-label">Stamina</div><div class="mini-bar stamina"><i style="width:${f.stamina}%"></i></div></div>
+        <div><div class="mini-label">Momentum</div><div class="mini-bar momentum"><i style="width:${f.momentum}%"></i></div></div>
+      </div>
+      <div class="finisher-shell${f.finisherMeter >= 100 ? ' ready' : ''}"><i style="width:${f.finisherMeter}%"></i></div>
+      <div class="finisher-label${f.finisherMeter >= 100 ? ' ready' : ''}">${f.finisherMeter >= 100 ? 'FINISHER READY' : 'Finisher Meter'}</div>
+    </div>`;
+
+  const tugA = Math.round((r.A.momentum / Math.max(1, r.A.momentum + r.B.momentum)) * 100);
+
   p.innerHTML = `
-    <div class="scoreboard">
-      <div class="fighter">
-        <h3>${r.A.name}</h3>
-        <div class="hp"><i style="width:${r.A.hp}%"></i></div>
-        <div class="sub-bars">
-          <div><div class="mini-label">Stamina</div><div class="mini-bar stamina"><i style="width:${r.A.stamina}%"></i></div></div>
-          <div><div class="mini-label">Momentum</div><div class="mini-bar momentum"><i style="width:${r.A.momentum}%"></i></div></div>
-        </div>
-        ${type === 'Iron Man' ? `<div class="mini-label">Falls: ${r.A.falls}</div>` : ''}
+    <div class="hud">
+      ${plate(r.A, 'left')}
+      <div class="tug-wrap">
+        <div class="match-type-tag">${type}</div>
+        <div class="tug-bar"><i style="width:${tugA}%"></i></div>
+        <div class="tug-label">VS</div>
       </div>
-      <div><div class="score">VS</div><small>${type.toUpperCase()}</small></div>
-      <div class="fighter">
-        <h3>${r.B.name}</h3>
-        <div class="hp"><i style="width:${r.B.hp}%"></i></div>
-        <div class="sub-bars">
-          <div><div class="mini-label">Stamina</div><div class="mini-bar stamina"><i style="width:${r.B.stamina}%"></i></div></div>
-          <div><div class="mini-label">Momentum</div><div class="mini-bar momentum"><i style="width:${r.B.momentum}%"></i></div></div>
-        </div>
-        ${type === 'Iron Man' ? `<div class="mini-label">Falls: ${r.B.falls}</div>` : ''}
-      </div>
+      ${plate(r.B, 'right')}
     </div>
     <div class="crowd-meter"><div class="mini-label">CROWD HEAT</div><div class="bar"><i style="width:${r.crowd}%;background:var(--red)"></i></div></div>
-    <div class="moment"><b>FINAL MOMENT</b><p>${r.events[r.events.length - 1].text}</p></div>
+    <div class="replay"><span class="replay-tag">FINAL MOMENT</span><p>${r.events[r.events.length - 1].text}</p></div>
     <div class="log">${log}</div>
     <div class="result">
       <div class="eyebrow">${r.draw ? 'RESULT' : 'WINNER'}</div>
       ${resultLine}
       <div class="stars">${starString(r.stars)}</div>
+      ${r.stars === 5 ? '<div class="moty">MATCH OF THE YEAR CANDIDATE</div>' : ''}
       ${titleBanner}
     </div>`;
+
+  // fire off a few toasts pulled from the sim's flagged events, spaced out
+  const toastEvents = r.events.filter(e => e.toast);
+  toastEvents.slice(-4).forEach((e, i) => setTimeout(() => addToast(e.toast.text, e.toast.kind === 'red' ? 'red' : null), i * 450));
+  if (!r.draw) setTimeout(() => playImpact(), 200);
+  if (r.finish === 'Submission') { /* tap sound already played in sim trigger point */ }
+  if (r.stars === 5) setTimeout(() => playFinisher(), 500);
 
   // career records + coins
   if (r.draw) {
@@ -424,6 +642,7 @@ function renderMatch(r, type, titleId, aBase, bBase) {
   renderChampions();
   renderTitlesScreen();
   fillTitleSelect();
+  renderSpotlight();
 }
 
 /* ============================================================
@@ -432,7 +651,7 @@ function renderMatch(r, type, titleId, aBase, bBase) {
 function renderHistory() {
   const el = $('#historyList');
   el.innerHTML = history.length ? history.map(h => `
-    <div class="history-item">
+    <div class="history-item${h.titleId ? ' title-match' : ''}">
       <div>
         <b>${h.a} vs ${h.b}</b><br>
         <span>${h.type} • ${h.duration} exchanges • ${h.finish} • ${h.date}${h.titleId ? ' • 🏆 ' + titleById(h.titleId).name : ''}</span>
