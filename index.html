@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>WrestleForge</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">WF</span><div><b>WRESTLEFORGE</b><small>PRO WRESTLING SIMULATOR</small></div></div>
+  <nav>
+    <button data-screen="home" class="active">Home</button>
+    <button data-screen="roster">Roster</button>
+    <button data-screen="titles">Titles</button>
+    <button data-screen="match">Match</button>
+    <button data-screen="history">History</button>
+  </nav>
+  <div class="money">★ <span id="coins">1000</span></div>
+</header>
+
+<main>
+
+<section id="home" class="screen active">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">WELCOME TO THE ARENA</p>
+      <h1>BUILD. FIGHT.<br><em>MAKE HISTORY.</em></h1>
+      <p>Create dream matchups, manage a roster and simulate every dramatic moment from the opening bell to the pinfall &mdash; strikes, suplexes, submissions, signatures, finishers, kick&#8209;outs and title changes.</p>
+      <button class="primary" id="quickMatch">START QUICK MATCH →</button>
+    </div>
+    <div class="hero-card"><div class="ring"><span>RING</span></div></div>
+  </div>
+
+  <div class="section-head" style="margin-top:50px"><div><p class="eyebrow">GOLD ON THE LINE</p><h2>CURRENT CHAMPIONS</h2></div></div>
+  <div id="champGrid" class="champ-grid"></div>
+
+  <div class="grid3" style="margin-top:16px">
+    <article><span class="icon">⚡</span><h3>FULL MATCH ENGINE</h3><p>Momentum, stamina, damage, reversals, signatures, finishers, near falls, weapons and interference.</p></article>
+    <article><span class="icon">♛</span><h3>DEEP ROSTER SYSTEM</h3><p>Every wrestler has a full profile: bio, hometown, moveset, career record, traits and championship history.</p></article>
+    <article><span class="icon">▣</span><h3>MATCH HISTORY</h3><p>Track winners, match duration, finish type, star rating and title changes across every show.</p></article>
+  </div>
+</section>
+
+<section id="roster" class="screen">
+  <div class="section-head">
+    <div><p class="eyebrow">COMPETITORS</p><h2>WRESTLER ROSTER</h2></div>
+    <input id="rosterSearch" placeholder="Search wrestlers...">
+  </div>
+  <div class="filter-row">
+    <div class="chip-group" id="alignFilter">
+      <button class="chip active" data-align="">All</button>
+      <button class="chip" data-align="Face">Face</button>
+      <button class="chip" data-align="Heel">Heel</button>
+    </div>
+    <select id="classFilter"><option value="">All Weight Classes</option></select>
+    <select id="sortRoster">
+      <option value="rating">Sort: Rating</option>
+      <option value="name">Sort: Name</option>
+      <option value="wins">Sort: Wins</option>
+    </select>
+  </div>
+  <div id="rosterGrid" class="roster-grid"></div>
+</section>
+
+<section id="titles" class="screen">
+  <div class="section-head"><div><p class="eyebrow">GOLD</p><h2>CHAMPIONSHIPS</h2></div></div>
+  <div id="titlesList" class="titles-list"></div>
+</section>
+
+<section id="match" class="screen">
+  <div class="section-head"><div><p class="eyebrow">BOOK THE SHOW</p><h2>CREATE MATCH</h2></div></div>
+  <div class="match-builder">
+    <div><label>WRESTLER 1</label><select id="p1"></select></div>
+    <div class="vs">VS</div>
+    <div><label>WRESTLER 2</label><select id="p2"></select></div>
+    <div><label>MATCH TYPE</label><select id="matchType">
+      <option>Singles</option>
+      <option>Falls Count Anywhere</option>
+      <option>Extreme Rules</option>
+      <option>Iron Man</option>
+      <option>Submission</option>
+    </select></div>
+    <div><label>TITLE ON THE LINE</label><select id="titleMatch"><option value="">None</option></select></div>
+    <button class="primary" id="startMatch">RING THE BELL →</button>
+  </div>
+  <div id="entrancePanel" class="entrance-panel hidden"></div>
+  <div id="matchPanel" class="match-panel hidden"></div>
+</section>
+
+<section id="history" class="screen">
+  <div class="section-head"><div><p class="eyebrow">ARCHIVE</p><h2>MATCH HISTORY</h2></div><button id="clearHistory" class="ghost">CLEAR</button></div>
+  <div id="historyList"></div>
+</section>
+
+</main>
+
+<div id="wrestlerModal" class="modal-overlay hidden">
+  <div class="modal-card" id="modalCard"></div>
+</div>
+
+</div>
+<script src="js/app.js"></script>
+</body>
+</html>
